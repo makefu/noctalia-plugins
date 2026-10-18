@@ -19,6 +19,14 @@
   "settings": {
     "nixos-hint": "Die Peer-Konfiguration (Pubkey, Relays, Anzeigename) wird vom NixOS-Modul verwaltet — siehe services.nostr-chat in deiner Konfiguration.",
     "history-limit-label": "Verlaufslimit",
-    "history-limit-description": "Nachrichten, die im In-Memory-Spiegel des Panels gehalten werden (SQLite behält alles)."
+    "history-limit-description": "Nachrichten, die im In-Memory-Spiegel des Panels gehalten werden (SQLite behält alles).",
+    "daemon-bin": {
+      "label": "Daemon-Binary",
+      "description": "Pfad zum nostr-chatd-Programm fuer Ereignisstroom und Einzelbefehle."
+    },
+    "max-history": {
+      "label": "Verlaufs-Limit",
+      "description": "Nachrichten im Speicher-Spiegel des Panels (sqlite behaelt alles)."
+    }
   }
 }

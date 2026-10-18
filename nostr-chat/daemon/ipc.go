@@ -118,7 +118,17 @@ func (b *Bridge) Serve(ctx context.Context, path string, handle func(Command)) e
 		return err
 	}
 	slog.Info("socket listening", "path", path)
-	go func() { <-ctx.Done(); ln.Close() }()
+	go func() {
+		<-ctx.Done()
+		ln.Close()
+		// Active readers would otherwise park in Scan forever; closing
+		// their conns makes the listen client (and tests) see EOF.
+		b.mu.Lock()
+		for c := range b.conns {
+			c.Close()
+		}
+		b.mu.Unlock()
+	}()
 	for {
 		conn, err := ln.Accept()
 		if err != nil {

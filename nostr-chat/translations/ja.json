@@ -19,6 +19,14 @@
   "settings": {
     "nixos-hint": "ピア設定（公開鍵、リレー、表示名）は NixOS モジュールで管理されています — 設定の services.nostr-chat を参照してください。",
     "history-limit-label": "履歴の上限",
-    "history-limit-description": "パネルのメモリ内ミラーに保持されるメッセージ数（SQLite はすべて保持します）。"
+    "history-limit-description": "パネルのメモリ内ミラーに保持されるメッセージ数（SQLite はすべて保持します）。",
+    "daemon-bin": {
+      "label": "デーモンバイナリ",
+      "description": "イベントストリームと単発コマンドに使う nostr-chatd のパス。"
+    },
+    "max-history": {
+      "label": "履歴の上限",
+      "description": "パネルのメモリ上ミラーに保持するメッセージ数（sqlite はすべて保持）。"
+    }
   }
 }

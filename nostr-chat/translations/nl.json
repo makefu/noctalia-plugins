@@ -19,6 +19,14 @@
   "settings": {
     "nixos-hint": "Peer-configuratie (pubkey, relays, weergavenaam) wordt beheerd door de NixOS-module — zie services.nostr-chat in je configuratie.",
     "history-limit-label": "Geschiedenislimiet",
-    "history-limit-description": "Berichten bijgehouden in het in-memory-spiegel van het paneel (SQLite bewaart alles)."
+    "history-limit-description": "Berichten bijgehouden in het in-memory-spiegel van het paneel (SQLite bewaart alles).",
+    "daemon-bin": {
+      "label": "Daemon-binary",
+      "description": "Pad naar de nostr-chatd binary voor de eventstroom en eenmalige commando's."
+    },
+    "max-history": {
+      "label": "Geschiedenislimiet",
+      "description": "Berichten in de geheugenkopie van het paneel (sqlite bewaart alles)."
+    }
   }
 }

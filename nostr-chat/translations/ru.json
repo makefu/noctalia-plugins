@@ -19,6 +19,14 @@
   "settings": {
     "nixos-hint": "Конфигурация собеседника (pubkey, релеи, отображаемое имя) управляется модулем NixOS — см. services.nostr-chat в вашей конфигурации.",
     "history-limit-label": "Лимит истории",
-    "history-limit-description": "Сообщения, хранящиеся в зеркале панели в памяти (SQLite сохраняет всё)."
+    "history-limit-description": "Сообщения, хранящиеся в зеркале панели в памяти (SQLite сохраняет всё).",
+    "daemon-bin": {
+      "label": "Демон (двоичный файл)",
+      "description": "Путь к двоичному файлу nostr-chatd для потока событий и разовых команд."
+    },
+    "max-history": {
+      "label": "Лимит истории",
+      "description": "Сообщений в памяти панели (sqlite хранит всё)."
+    }
   }
 }

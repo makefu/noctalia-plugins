@@ -19,6 +19,14 @@
   "settings": {
     "nixos-hint": "Konfiguracja peera (pubkey, przekaźniki, nazwa wyświetlana) jest zarządzana przez moduł NixOS — zobacz services.nostr-chat w swojej konfiguracji.",
     "history-limit-label": "Limit historii",
-    "history-limit-description": "Wiadomości przechowywane w odbiciu panelu w pamięci (SQLite zachowuje wszystko)."
+    "history-limit-description": "Wiadomości przechowywane w odbiciu panelu w pamięci (SQLite zachowuje wszystko).",
+    "daemon-bin": {
+      "label": "Plik binarny demona",
+      "description": "Sciezka do pliku nostr-chatd strumien zdarzen i pojedyncze polecenia."
+    },
+    "max-history": {
+      "label": "Limit historii",
+      "description": "Wiadomosci w kopii w pamieci panelu (sqlite przechowuje wszystko)."
+    }
   }
 }

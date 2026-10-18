@@ -19,6 +19,14 @@
   "settings": {
     "nixos-hint": "A configuração do peer (pubkey, relays, nome de exibição) é gerenciada pelo módulo NixOS — veja services.nostr-chat na sua configuração.",
     "history-limit-label": "Limite de histórico",
-    "history-limit-description": "Mensagens mantidas no espelho em memória do painel (o SQLite guarda tudo)."
+    "history-limit-description": "Mensagens mantidas no espelho em memória do painel (o SQLite guarda tudo).",
+    "daemon-bin": {
+      "label": "Binario do daemon",
+      "description": "Caminho do binario nostr-chatd para o fluxo de eventos e comandos pontuais."
+    },
+    "max-history": {
+      "label": "Limite do historico",
+      "description": "Mensagens mantidas na copia na memoria do painel (o sqlite guarda tudo)."
+    }
   }
 }

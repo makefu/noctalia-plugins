@@ -1,0 +1,42 @@
+id = "makefu/nostr-chat"
+name = "Nostr Chat"
+version = "1.0.0"
+plugin_api = 34
+author = "Jörg Thalheim"
+description = "Chat panel for a NIP-17 DM peer (bot or human) via the nostr-chatd daemon"
+homepage = "https://github.com/Mic92/noctalia-plugins"
+license = "MIT"
+tags = ["Panel", "Network", "AI"]
+
+[[service]]
+id = "service"
+entry = "service.luau"
+
+[[panel]]
+id = "chat"
+entry = "panel.luau"
+width = 600
+placement = "floating"
+position = "center"
+# Esc closes the panel (host-owned dismiss).
+dismiss_on_outside_click = true
+# Ctrl+F focuses the search field even while the compose input has focus;
+# a focused text input consumes plain keys first, so chords still reach us.
+capture_keys = ["ctrl+f"]
+
+[[setting]]
+key = "daemon_bin"
+type = "string"
+label_key = "settings.daemon-bin.label"
+description_key = "settings.daemon-bin.description"
+default = "nostr-chatd"
+
+[[setting]]
+key = "max_history"
+type = "int"
+label_key = "settings.max-history.label"
+description_key = "settings.max-history.description"
+default = 200
+min = 20
+max = 1000
+step = 20

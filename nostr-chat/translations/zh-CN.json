@@ -19,6 +19,14 @@
   "settings": {
     "nixos-hint": "对端配置（公钥、中继、显示名称）由 NixOS 模块管理 — 请参阅配置中的 services.nostr-chat。",
     "history-limit-label": "历史记录上限",
-    "history-limit-description": "面板内存镜像中保留的消息数（SQLite 会保留全部）。"
+    "history-limit-description": "面板内存镜像中保留的消息数（SQLite 会保留全部）。",
+    "daemon-bin": {
+      "label": "守护进程二进制",
+      "description": "用于事件流和单发命令的 nostr-chatd 路径。"
+    },
+    "max-history": {
+      "label": "历史上限",
+      "description": "面板内存镜像保留的消息数（sqlite 保留全部）。"
+    }
   }
 }

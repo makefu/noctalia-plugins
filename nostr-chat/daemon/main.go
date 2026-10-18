@@ -96,6 +96,19 @@ func fetchSecret(shcmd string) (string, error) {
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})))
+
+	// Shell-facing subcommands: they only ever touch the unix socket, so
+	// they must not require the peer/secret env the daemon needs (the
+	// shell's runStream/runAsync environment is minimal).
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "listen":
+			os.Exit(runListenCmd(os.Args[2:]))
+		case "cmd":
+			os.Exit(runCmdSub(os.Args[2:]))
+		}
+	}
+
 	cfg := loadConfig()
 
 	if cfg.PeerPubKey == "" || len(cfg.Relays) == 0 {

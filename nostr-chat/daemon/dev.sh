@@ -13,7 +13,7 @@ pkill -f 'nostr-chatd|go-build.*/exe/daemon' 2>/dev/null || true
 
 export NOSTR_CHAT_PEER_PUBKEY=96dc8a8cb0c28bdd113c1f6e350abd6014c69369cbd618c3b8cd4d1326bf7e37
 export NOSTR_CHAT_RELAYS=wss://nostr.thalheim.io,wss://nostr2.thalheim.io,wss://nos.lol
-export NOSTR_CHAT_SECRET_CMD="rbw get 'nostr identity'"
+export NOSTR_CHAT_SECRET_CMD="rbw get 'nostr-identity'"
 export NOSTR_CHAT_BLOSSOM=https://nostr-files.thalheim.io
 export NOSTR_CHAT_DISPLAY_NAME=Janet
 export CGO_ENABLED=0

@@ -2,8 +2,9 @@
 #
 # Self-contained: builds the co-located ./daemon and runs it as a
 # systemd *user* unit — the daemon needs the logged-in user's secret
-# store, XDG_RUNTIME_DIR socket, and noctalia-shell session, so a
-# system service wouldn't work.
+# store and XDG_RUNTIME_DIR socket, so a system service wouldn't work.
+# The noctalia v5 plugin talks to it through the `listen`/`cmd`
+# subcommands (see plugin.toml + service.luau).
 #
 #   imports = [ .../nostr-chat/module.nix ];
 #   services.nostr-chat = {
@@ -60,17 +61,18 @@ in
     };
     extraPath = lib.mkOption {
       type = lib.types.listOf lib.types.package;
-      default = [ pkgs.noctalia-shell ];
+      default = [ ];
       description = ''
-        Packages on the daemon's PATH. noctalia-shell is required for IPC
-        push; add whatever your secretCommand needs (rbw, pass, …).
+        Packages on the daemon's PATH. The daemon no longer shells out to
+        the compositor (events go over the unix socket), so this only
+        needs whatever your secretCommand requires (rbw, pass, …).
       '';
     };
   };
 
   config = {
     systemd.user.services.nostr-chatd = {
-      description = "Nostr NIP-17 bridge for noctalia-shell";
+      description = "Nostr NIP-17 bridge for the noctalia nostr-chat plugin";
       after = [ "graphical-session.target" ];
       partOf = [ "graphical-session.target" ];
       wantedBy = [ "graphical-session.target" ];

@@ -10,7 +10,7 @@ buildGoModule {
   env.CGO_ENABLED = "0";
 
   meta = {
-    description = "Nostr NIP-17 DM bridge for a noctalia-shell chat panel";
+    description = "Nostr NIP-17 DM bridge for the noctalia nostr-chat plugin";
     mainProgram = "nostr-chatd";
   };
 }

@@ -234,15 +234,16 @@ local function renderBubble(m)
 
   local content = {}
   if m.image and m.image ~= "" then
-    table.insert(content, ui.image({ path = m.image, width = 480, height = 300, fit = "contain" }))
+    table.insert(content, ui.image({ path = m.image, width = 438, height = 300, fit = "contain" }))
   end
   local text = m.content or ""
   if text ~= "" then
-    -- Explicit width is the wrap budget: MarkdownView only caps its labels
-    -- when a measure constraint or its own width is known, and a
-    -- content-sized parent column advertises neither. 480 = panel 600
-    -- minus panel padding, scrollbar, and the bubble's own padding/border.
-    table.insert(content, ui.markdown({ text = text, width = 480 }))
+    -- No width prop here on purpose: markdown's width is applied as
+    -- min=max node clamp, which both forces 480-wide boxes and still
+    -- leaves the labels without a wrap budget. The wrap width arrives
+    -- through the layout instead: `inner` carries an explicit width, so
+    -- the stretch chain hands MarkdownView a real max-width constraint.
+    table.insert(content, ui.markdown({ text = text }))
   end
 
   -- ui.box is decoration-only in the v5 host (children are dropped), so the
@@ -316,7 +317,18 @@ local function renderBubble(m)
     onRightClick = openBubbleMenu(m),
   }))
 
-  local inner = ui.column({ gap = 3 }, { bubble, ui.row({ gap = 4, align = "center" }, metaKids) })
+  -- flexGrow + stretch is the wrap-budget chain: the msg row gets an exact
+  -- width from the scroll viewport, then a flexGrow child is re-measured
+  -- with that exact main-axis share (flex.cpp flexGrow pass). Stretching
+  -- the bubble to it hands MarkdownView a real max-width constraint so its
+  -- labels wrap instead of measuring single-line and overflowing the panel.
+  -- (A `width` prop would only clamp min=max, never propagating a budget.)
+  local inner = ui.column({
+    key = "inner-" .. m.id,
+    gap = 3,
+    flexGrow = 1,
+    align = "stretch",
+  }, { bubble, ui.row({ gap = 4, align = "center", justify = mine and "end" or "start" }, metaKids) })
   table.insert(parts, inner)
 
   return ui.row({

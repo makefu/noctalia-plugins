@@ -238,21 +238,24 @@ local function renderBubble(m)
   end
   local text = m.content or ""
   if text ~= "" then
-    table.insert(content, ui.markdown({ text = text, width = 480 }))
+    table.insert(content, ui.markdown({ text = text }))
   end
 
-  local bubble = ui.box({
+  -- ui.box is decoration-only in the v5 host (children are dropped), so the
+  -- bubble itself is a styled column; the flex carries fill/radius/border.
+  local bubble = ui.column({
     key = "bub-" .. m.id,
+    gap = 6,
     fill = mine and "primary/0.15" or "surface_variant",
     radius = 12,
     padding = 10,
     border = (hit or mine) and "primary" or nil,
     borderWidth = hit and 2 or (mine and 1 or 0),
+    align = "start",
     onClick = function()
       setReplyTarget(m)
     end,
-    onRightClick = openBubbleMenu(m),
-  }, { ui.column({ gap = 6 }, content) })
+  }, content)
 
   -- quote of the replied-to message, above the bubble
   local parts = {}
@@ -298,6 +301,16 @@ local function renderBubble(m)
       table.insert(metaKids, ui.glyph({ name = "check", size = 11, color = "primary/0.8" }))
     end
   end
+  -- openContextMenu only works from a button onRightClick (the sole callback
+  -- the host gives a pointer context), so each bubble carries a menu button.
+  table.insert(metaKids, ui.button({
+    key = "menu-" .. m.id,
+    glyph = "dots-vertical",
+    variant = "ghost",
+    glyphSize = 12,
+    controlSize = "sm",
+    onRightClick = openBubbleMenu(m),
+  }))
 
   local inner = ui.column({ gap = 3 }, { bubble, ui.row({ gap = 4, align = "center" }, metaKids) })
   table.insert(parts, inner)

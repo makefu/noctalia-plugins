@@ -238,7 +238,11 @@ local function renderBubble(m)
   end
   local text = m.content or ""
   if text ~= "" then
-    table.insert(content, ui.markdown({ text = text }))
+    -- Explicit width is the wrap budget: MarkdownView only caps its labels
+    -- when a measure constraint or its own width is known, and a
+    -- content-sized parent column advertises neither. 480 = panel 600
+    -- minus panel padding, scrollbar, and the bubble's own padding/border.
+    table.insert(content, ui.markdown({ text = text, width = 480 }))
   end
 
   -- ui.box is decoration-only in the v5 host (children are dropped), so the

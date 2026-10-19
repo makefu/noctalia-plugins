@@ -33,6 +33,13 @@ local replyTarget = nil   -- {id, text} of the message being replied to
 local composeKey = 0
 local composeText = ""
 
+-- Seed before watching: the service pushed its initial state long before
+-- this runtime exists (panels are created on first open); watch alone would
+-- leave the panel blind until the next daemon event.
+msgs = noctalia.state.get("chat.messages") or {}
+meta = noctalia.state.get("chat.meta") or {}
+lastError = noctalia.state.get("chat.lastError") or ""
+
 noctalia.state.watch("chat.messages", function(v)
   local grew = #msgs < #v
   msgs = v or {}

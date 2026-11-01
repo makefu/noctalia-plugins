@@ -208,22 +208,171 @@ function onBubbleAction(action, id)
   end
 end
 
----- attach (clipboard image via wl-paste; v5 has no file picker) ----------
+---- attach (recent / clipboard / browse / external drop) -------------------
 
-local attachSeq = 0
+-- Globals on purpose: the fixed-name onClick callbacks below are _G
+-- functions and must resolve the same storage as render().
+attachSeq = 0
+attachOpen = false
+recentFiles = {}
+browsing = false
 
-local function attachFromClipboard()
-  attachSeq = attachSeq + 1
-  local path = string.format("%s/attach-%d-%d.png", noctalia.pluginDataDir(), os.time(), attachSeq)
-  noctalia.runAsync({ "wl-paste", "-t", "image/png", path }, function(result)
-    if result and result.exitCode == 0 then
-      postCmd({ kind = "send-file", path = path, unlink = true })
+local function isImageName(name)
+  local lower = string.lower(name)
+  for _, ext in ipairs({ ".png", ".jpg", ".jpeg", ".gif", ".webp" }) do
+    if string.sub(lower, -#ext) == ext then
+      return true
     end
+  end
+  return false
+end
+
+local function attachCapturePath()
+  attachSeq = attachSeq + 1
+  return string.format("%s/attach-%d-%d.png", noctalia.pluginDataDir(), os.time(), attachSeq)
+end
+
+local function sendFile(path, unlink)
+  postCmd({ kind = "send-file", path = path, unlink = unlink })
+end
+
+-- wl-paste has no positional output argument: `wl-paste -t image/png out.png`
+-- writes nothing and exits 1. Redirect in a shell instead.
+local function attachFromClipboard()
+  local path = attachCapturePath()
+  noctalia.runAsync({ "sh", "-c", string.format("wl-paste -t image/png > '%s'", path) }, function(result)
+    local info = result and result.exitCode == 0 and noctalia.fileInfo(path) or nil
+    if info and not info.isDir and (info.size or 0) > 0 then
+      sendFile(path, true)
+      return
+    end
+    noctalia.removeFile(path)
+    noctalia.notifyError("Nostr Chat", noctalia.tr("panel.attach-no-clipboard-image"))
   end)
 end
 
+local function listRecentImages(limit)
+  local files = {}
+  for _, dir in ipairs({ "~/Downloads", "~/Pictures" }) do
+    local expanded = noctalia.expandPath(dir)
+    local entries = expanded and noctalia.listDir(expanded) or nil
+    if entries then
+      for _, name in ipairs(entries) do
+        if isImageName(name) then
+          local full = expanded .. "/" .. name
+          local info = noctalia.fileInfo(full)
+          if info and not info.isDir then
+            table.insert(files, { path = full, name = name, mtime = info.mtime or 0 })
+          end
+        end
+      end
+    end
+  end
+  table.sort(files, function(a, b) return a.mtime > b.mtime end)
+  local out = {}
+  for i = 1, math.min(limit, #files) do
+    table.insert(out, files[i])
+  end
+  return out
+end
+
 function onAttachClicked()
+  attachOpen = not attachOpen
+  if attachOpen then
+    recentFiles = listRecentImages(8)
+  end
+  render()
+end
+
+function onCloseAttach()
+  attachOpen = false
+  render()
+end
+
+-- Fixed-name callbacks: ui.button onClick carries no payload, so each recent
+-- slot gets its own global. Luau allows _G assignment from a loop.
+for i = 1, 8 do
+  _G["onAttachRecent" .. i] = function()
+    local f = recentFiles[i]
+    if f then
+      sendFile(f.path, false)
+    end
+  end
+end
+
+function onClosePanel()
+  panel.close()
+end
+
+function onAttachClipboard()
   attachFromClipboard()
+end
+
+-- Native picker: `noctalia dmenu` pipes candidate lines to the launcher panel
+-- and prints the selection to stdout (exit 1 = cancelled). runAsync default
+-- timeout is 5s — a human picking a file needs longer (max is 60s).
+function onAttachBrowse()
+  if browsing then
+    return
+  end
+  browsing = true
+  render()
+  local dirs = { noctalia.expandPath("~/Downloads"), noctalia.expandPath("~/Pictures"), noctalia.expandPath("~") }
+  local findDirs = {}
+  for _, d in ipairs(dirs) do
+    table.insert(findDirs, string.format("'%s'", d))
+  end
+  local listCmd = string.format(
+    "find %s -maxdepth 2 \\( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.gif' -o -iname '*.webp' \\) 2>/dev/null | sort | head -n 300",
+    table.concat(findDirs, " ")
+  )
+  noctalia.runAsync(listCmd, function(list)
+    local lines = list and list.exitCode == 0 and list.stdout or ""
+    if lines == "" then
+      browsing = false
+      render()
+      noctalia.notifyError("Nostr Chat", noctalia.tr("panel.attach-no-files"))
+      return
+    end
+    local body = 'printf "%s\\n" "$0" | noctalia dmenu -p "Attach file"'
+    noctalia.runAsync({ "sh", "-c", body, lines }, function(pick)
+      browsing = false
+      render()
+      local selection = pick and pick.exitCode == 0 and pick.stdout or ""
+      selection = string.gsub(selection, "%s+$", "")
+      if selection ~= "" and noctalia.fileInfo(selection) then
+        attachOpen = false
+        sendFile(selection, false)
+        return
+      end
+      if pick and pick.exitCode ~= 0 and pick.exitCode ~= 1 then
+        noctalia.notifyError("Nostr Chat", noctalia.tr("panel.attach-picker-failed"))
+      end
+    end, 60000)
+  end, 15000)
+end
+
+-- Called by the host when files are dropped on the panel surface
+-- (noctalia-shell wl_data_device patch). One newline-separated argument.
+function onFilesDropped(joined)
+  if type(joined) ~= "string" or joined == "" then
+    return
+  end
+  local sent, rejected = 0, 0
+  for line in string.gmatch(joined, "[^\\r\\n]+") do
+    local path = string.gsub(line, "^file://", "")
+    path = string.gsub(string.gsub(path, "%%20", " "), "%s+$", "")
+    local info = noctalia.fileInfo(path)
+    if info and not info.isDir and isImageName(path) then
+      sendFile(path, false)
+      sent = sent + 1
+    else
+      rejected = rejected + 1
+    end
+  end
+  if sent == 0 and rejected > 0 then
+    noctalia.notifyError("Nostr Chat", noctalia.tr("panel.attach-drop-unsupported"))
+  end
 end
 
 ---- tree --------------------------------------------------------------------
@@ -359,6 +508,7 @@ function render()
     ui.box({ width = 8, height = 8, radius = 4, fill = statusColor, tooltip = relayTip }),
     ui.label({ text = statusText, fontSize = 11, color = statusColor }),
     ui.button({ glyph = "search", variant = "ghost", glyphSize = 14, onClick = "onSearchButton" }),
+    ui.button({ glyph = "x", variant = "ghost", glyphSize = 14, tooltip = noctalia.tr("panel.close-tooltip"), onClick = "onClosePanel" }),
   })
 
   function onSearchButton()
@@ -373,6 +523,37 @@ function render()
   end
 
   local body = { header }
+
+  -- In-panel attach picker. A popup/context menu would need pointer-context
+  -- serials the button click doesn't carry, and an external dmenu would steal
+  -- focus; rendering it inline keeps every click inside the panel.
+  if attachOpen then
+    table.insert(body, ui.column({ gap = 4, align = "stretch", fill = "surface_variant/0.5", radius = 10, padding = 8 }, {
+      ui.row({ gap = 6, align = "center" }, {
+        ui.label({ text = noctalia.tr("panel.attach-title"), fontWeight = "bold", fontSize = 12, flexGrow = 1 }),
+        ui.button({ glyph = "x", variant = "ghost", glyphSize = 12, onClick = "onCloseAttach" }),
+      }),
+      ui.row({ gap = 6 }, {
+        ui.button({ text = noctalia.tr("panel.attach-clipboard"), variant = "secondary", glyph = "clipboard", onClick = "onAttachClipboard" }),
+        ui.button({ text = noctalia.tr("panel.attach-browse"), variant = "secondary", glyph = "folder", onClick = "onAttachBrowse" }),
+      }),
+      #recentFiles > 0 and ui.label({ text = noctalia.tr("panel.attach-recent"), fontSize = 10, color = "on_surface_variant/0.8" }) or nil,
+      #recentFiles > 0 and ui.scroll({ height = 118, gap = 3, align = "stretch" }, (function()
+        local items = {}
+        for i, f in ipairs(recentFiles) do
+          table.insert(items, ui.button({
+            key = "recent-" .. i .. "-" .. f.path,
+            text = f.name,
+            variant = "ghost",
+            glyph = "image",
+            onClick = "onAttachRecent" .. i,
+          }))
+        end
+        return items
+      end)()) or nil,
+      ui.label({ text = noctalia.tr("panel.attach-drop-hint"), fontSize = 10, color = "on_surface_variant/0.6" }),
+    }))
+  end
 
   if searchOpen then
     local counter = #hits > 0 and string.format("%d/%d", hitIdx, #hits) or ""
@@ -518,6 +699,8 @@ function onOpen(_context)
   revealKey = ""
   replyTarget = nil
   composeText = ""
+  attachOpen = false
+  recentFiles = {}
   composeKey = composeKey + 1 -- fresh compose input grabs focus on open
   postCmd({ kind = "mark-read" })
   render()

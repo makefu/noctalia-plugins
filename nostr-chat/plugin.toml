@@ -1,7 +1,7 @@
 id = "makefu/nostr-chat"
 name = "Nostr Chat"
 version = "1.0.0"
-plugin_api = 34
+plugin_api = 35
 author = "Jörg Thalheim"
 description = "Chat panel for a NIP-17 DM peer (bot or human) via the nostr-chatd daemon"
 homepage = "https://github.com/Mic92/noctalia-plugins"

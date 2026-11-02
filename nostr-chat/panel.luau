@@ -31,7 +31,23 @@ local hits = {}   -- message ids matching searchQuery, oldest first
 local hitIdx = 0  -- 1-based index into hits (0 = none)
 local replyTarget = nil   -- {id, text} of the message being replied to
 local composeKey = 0
-local composeText = ""
+-- The panel runtime is destroyed when the panel closes and re-runs this
+-- chunk on the next open, so the unsent composer text cannot live in this
+-- local alone: it is seeded from draft.txt in the plugin data dir, which
+-- is also the only store that survives a shell restart. Missing file ==
+-- no draft (sending unlinks it).
+local DRAFT_FILE = "draft.txt"
+
+local function draftPath()
+  local dir = noctalia.pluginDataDir()
+  if not dir or dir == "" then
+    return nil
+  end
+  return dir .. "/" .. DRAFT_FILE
+end
+
+local p0 = draftPath()
+local composeText = (p0 and noctalia.readFile(p0)) or ""
 
 -- attach state (rendered by the tree below; declared early so the
 -- chat.attach watcher can reach these locals, not shadowing globals)
@@ -104,9 +120,92 @@ local function postCmd(cmd)
   noctalia.state.set("chat.cmd", cmd)
 end
 
+-- Composer row math: the host sizes multiline inputs by the height layout
+-- assigns, so we estimate wrapped rows from the text (panel is 600 px wide;
+-- the input sits between the paperclip and send buttons at ~14 px font)
+-- and let a ui.scroll viewport cap the visible area at 3 rows. The input
+-- keeps its full estimated height inside, which is what arms the host
+-- ScrollView's real scrollbar once the draft outgrows three rows.
+-- Pixel-calibrated against the flake-pinned host (v5.4.1 cece614) in the
+-- nested compositor: a 14 px font paints a 17 px line pitch (label rows
+-- at +8 leading, ink bands 422/439/456/...), and kMultilinePadV =
+-- Style::spaceSm = 8 pins the label 8 px under the frame, so the input's
+-- real content height is rows * 17 + 16.
+--
+-- The estimate must track that exactly. Over-count leaves blank space
+-- *below* the text, and stickToBottom pins the viewport into the blank.
+-- Under-count is self-healing: the host Input pans its own text so the
+-- caret stays visible (ensureCursorVisibleY), and it only yields the
+-- wheel to the ancestor ScrollView when its internal offset is clamped.
+-- Capacity measured with a 100-word single-line draft: 67..78 glyphs fit
+-- a row between the buttons at panel width; 72 biases to under-count.
+local COMPOSE_LINE_H = 17
+local COMPOSE_PAD_V = 16 -- 2 * kMultilinePadV (Style::spaceSm = 8)
+local COMPOSE_MAX_ROWS = 3
+local COMPOSE_CHARS_PER_ROW = 72
+
+local function composeRows(text)
+  if text == "" then
+    return 1
+  end
+  local rows = 0
+  for line in string.gmatch(text .. "\n", "([^\r\n]*)\n") do
+    local count, used = 1, 0
+    for word in string.gmatch(line, "%S+") do
+      local w = #word
+      if used == 0 then
+        used = w
+      elseif used + 1 + w <= COMPOSE_CHARS_PER_ROW then
+        used = used + 1 + w
+      else
+        count = count + 1
+        used = w
+      end
+      while used > COMPOSE_CHARS_PER_ROW do -- overlong single word
+        count = count + 1
+        used = used - COMPOSE_CHARS_PER_ROW
+      end
+    end
+    rows = rows + count
+  end
+  return rows
+end
+
+-- Caret-follow: the host Input puts its caret at the end of any value it is
+-- seeded with and pans only its *internal* offset (inert here, because the
+-- input keeps its full estimated height inside the capped ScrollView). The
+-- ScrollView itself starts at offset 0 whenever we hand it a fresh node, so
+-- without this rev the composer would show the top of a long draft while the
+-- caret is at the bottom. Bumped on every draft change -> the viewport lands
+-- where the user is typing (paste/send included).
+local composeScrollRev = 0
+
+-- Takeover re-pin countdown: focusing the input makes the host scroll it
+-- "into view" at its top, which lands the viewport at the *start* of a
+-- long draft while the caret sits at the end. update() runs every second
+-- tick; for the first couple ticks after opening we bump scrollToBottomRev
+-- so the viewport settles at the caret.
+local composeFollow = 0
+
+local function setDraft(text)
+  if text ~= composeText then
+    composeScrollRev = composeScrollRev + 1
+  end
+  composeText = text
+  local p = draftPath()
+  if not p then
+    return
+  end
+  if text == "" then
+    noctalia.removeFile(p) -- sending unlinks the draft: absence == no draft
+  else
+    noctalia.writeFile(p, text)
+  end
+end
+
 local function sendCompose(text)
   text = text or composeText
-  composeText = ""
+  setDraft("")
   if text == nil or text == "" then
     return
   end
@@ -408,7 +507,7 @@ local function runAttach(textFallback)
       local t = noctalia.clipboardText()
       attachBusy = false
       if t and t ~= "" then
-        composeText = composeText .. t
+        setDraft(composeText .. t)
         composeKey = composeKey + 1
       end
       render()
@@ -912,37 +1011,80 @@ function render()
       and noctalia.tr("panel.compose-placeholder", { name = peerName() })
       or noctalia.tr("panel.compose-waiting")
 
-  table.insert(body, ui.row({ gap = 8, align = "end" }, {
-    ui.button({
-      glyph = "paperclip",
-      variant = "ghost",
-      glyphSize = 16,
-      enabled = not attachBusy,
-      tooltip = noctalia.tr("panel.attach-image-tooltip"),
-      onClick = "onAttachClicked",
-    }),
-    ui.input({
-      key = "compose-" .. composeKey,
-      -- Uncontrolled host input: `value` seeds only when the node is created,
-      -- so every programmatic edit (send, Ctrl+V paste) bumps composeKey and
-      -- the fresh node re-seeds from composeText.
-      value = composeText,
-      multiline = true,
-      submitOnEnter = true,
+  -- Composer: multiline input that grows with the text up to three rows.
+  -- Beyond that the input keeps its full estimated height inside a
+  -- ui.scroll viewport: the host ScrollView shows its real scrollbar and
+  -- pans wheel/drag there (the input's own pan is inert because all its
+  -- lines fit its height). The cap only lands when the ROW itself has an
+  -- explicit height and align="stretch": Flex clamps its own height before
+  -- arranging stretch children, and a scroll view sizes from the exact
+  -- height it is arranged with (its min/max height props are otherwise
+  -- ignored by ScrollView::doLayout). Buttons ride in centering columns so
+  -- the stretch does not inflate them.
+  local rows = composeRows(composeText)
+  local wrapped = rows > COMPOSE_MAX_ROWS
+  local contentH = rows * COMPOSE_LINE_H + COMPOSE_PAD_V
+  local viewH = COMPOSE_MAX_ROWS * COMPOSE_LINE_H + COMPOSE_PAD_V
+  local composer = ui.input({
+    key = "compose-" .. composeKey,
+    -- Uncontrolled host input: `value` seeds only when the node is created,
+    -- so every programmatic edit (send, Ctrl+V paste) bumps composeKey and
+    -- the fresh node re-seeds from composeText.
+    value = composeText,
+    multiline = true,
+    submitOnEnter = true,
+    flexGrow = 1,
+    height = contentH,
+    focus = true,
+    -- Wrapped mode: the Input paints its own frame with
+    -- radius = frameRadius * height / Style::controlHeight, so a 3x-tall
+    -- draft turns that frame into a stadium arc that swings outside the
+    -- text. Hide it and let the ScrollView own the box: its radius is a
+    -- plain prop and its border insets the content.
+    frameVisible = not wrapped,
+    onChange = "onComposeChange",
+    onSubmit = "onComposeSubmit",
+  })
+  if wrapped then
+    composer = ui.scroll({
+      key = "compose-scroll-" .. composeKey,
       flexGrow = 1,
-      height = 38,
-      focus = true,
-      onChange = "onComposeChange",
-      onSubmit = "onComposeSubmit",
-    }),
-    ui.button({ glyph = "send", variant = "primary", enabled = composeText ~= "", onClick = "onSendClicked" }),
+      align = "stretch", -- scroll content is a vertical flex: stretch gives the input the viewport width
+      fill = "surface_variant/0.6",
+      border = "outline/0.6",
+      radius = 10,
+      borderWidth = 1,
+      paddingH = 10,
+      paddingV = 8,
+      scrollToBottomRev = composeScrollRev,
+    }, { composer })
+  end
+
+  local paperclip = ui.button({
+    glyph = "paperclip",
+    variant = "ghost",
+    glyphSize = 16,
+    enabled = not attachBusy,
+    tooltip = noctalia.tr("panel.attach-image-tooltip"),
+    onClick = "onAttachClicked",
+  })
+  local sendButton = ui.button({ glyph = "send", variant = "primary", enabled = composeText ~= "", onClick = "onSendClicked" })
+  if wrapped then
+    paperclip = ui.column({ justify = "center", align = "center" }, { paperclip })
+    sendButton = ui.column({ justify = "center", align = "center" }, { sendButton })
+  end
+
+  table.insert(body, ui.row({ gap = 8, align = wrapped and "stretch" or "end", height = wrapped and viewH or nil }, {
+    paperclip,
+    composer,
+    sendButton,
   }))
 
   panel.render(ui.column({ flexGrow = 1, gap = 8, align = "stretch" }, body))
 end
 
 function onComposeChange(value)
-  composeText = value or ""
+  setDraft(value or "")
   render()
 end
 
@@ -977,10 +1119,13 @@ function onOpen(_context)
   searchOpen = false
   searchQuery = ""
   hits = {}
+  composeScrollRev = composeScrollRev + 1 -- fresh scroll node: land at the caret (bottom)
   hitIdx = 0
   revealKey = ""
   replyTarget = nil
-  composeText = ""
+  -- composeText deliberately survives close/reopen (persisted draft);
+  -- it clears on send or when the user deletes the text themselves.
+  composeFollow = 2
   attachOpen = false
   recentFiles = {}
   composeKey = composeKey + 1 -- fresh compose input grabs focus on open
@@ -998,6 +1143,10 @@ end
 
 -- Second ticks keep the "ago" timestamps honest while the panel is open.
 function update()
+  if composeFollow > 0 then
+    composeFollow = composeFollow - 1
+    composeScrollRev = composeScrollRev + 1 -- undo the focus scroll-into-view top-pin
+  end
   render()
 end
 

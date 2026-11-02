@@ -72,3 +72,55 @@ func TestDecryptRejectsBadOx(t *testing.T) {
 		t.Fatal("expected ox mismatch error")
 	}
 }
+
+// detectContentType must trust magic bytes, sniff SVG (http.DetectContentType
+// calls it text/xml), and fall back to the extension table when sniffing
+// gives up — including for .svg, which Go >=1.23 dropped from the built-in
+// mime table unless "mime/builtin" is imported.
+func TestDetectContentType(t *testing.T) {
+	nonSniffable := []byte("\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B")
+	tests := []struct {
+		name string
+		path string
+		data []byte
+		want string
+	}{
+		{
+			name: "png magic",
+			path: "a.png",
+			data: append([]byte("\x89PNG\r\n\x1a\n"), bytes.Repeat([]byte{0}, 5000)...),
+			want: "image/png",
+		},
+		{
+			name: "jpeg magic",
+			path: "a.jpg",
+			data: append([]byte("\xFF\xD8\xFF\xE0"), bytes.Repeat([]byte{0}, 5000)...),
+			want: "image/jpeg",
+		},
+		{
+			name: "svg content beats xml sniff",
+			path: "a.svg",
+			data: []byte(`<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>`),
+			want: "image/svg+xml",
+		},
+		{
+			name: "svg by extension when unsniffable",
+			path: "a.svg",
+			data: nonSniffable,
+			want: "image/svg+xml",
+		},
+		{
+			name: "no extension no magic",
+			path: "noext",
+			data: nonSniffable,
+			want: "application/octet-stream",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := detectContentType(tt.path, tt.data); got != tt.want {
+				t.Errorf("detectContentType(%q) = %q, want %q", tt.path, got, tt.want)
+			}
+		})
+	}
+}

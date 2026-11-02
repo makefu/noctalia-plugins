@@ -329,6 +329,12 @@ func detectContentType(filePath string, data []byte) string {
 	if len(sniff) > 512 {
 		sniff = sniff[:512]
 	}
+	// DetectContentType calls SVG text/xml or application/xml — it has
+	// no svg magic, so check for the root tag before it swallows the
+	// file type.
+	if bytes.Contains(sniff, []byte("<svg")) {
+		return "image/svg+xml"
+	}
 	if ct := http.DetectContentType(sniff); ct != "application/octet-stream" {
 		return ct
 	}

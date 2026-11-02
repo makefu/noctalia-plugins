@@ -474,15 +474,23 @@ function onCloseAttach()
 end
 
 -- Fixed-name callbacks: ui.button onClick carries no payload, so each recent
--- slot gets its own global. Luau allows _G assignment from a loop.
-for i = 1, 8 do
-  _G["onAttachRecent" .. i] = function()
-    local f = recentFiles[i]
-    if f then
-      sendFile(f.path, false)
-    end
+-- slot gets its own global. _G is the readonly shared table under the host
+-- sandbox, so these must be plain function statements, not _G assignments.
+local function sendRecent(i)
+  local f = recentFiles[i]
+  if f then
+    sendFile(f.path, false)
   end
 end
+
+function onAttachRecent1() sendRecent(1) end
+function onAttachRecent2() sendRecent(2) end
+function onAttachRecent3() sendRecent(3) end
+function onAttachRecent4() sendRecent(4) end
+function onAttachRecent5() sendRecent(5) end
+function onAttachRecent6() sendRecent(6) end
+function onAttachRecent7() sendRecent(7) end
+function onAttachRecent8() sendRecent(8) end
 
 function onClosePanel()
   panel.close()

@@ -120,56 +120,16 @@ local function postCmd(cmd)
   noctalia.state.set("chat.cmd", cmd)
 end
 
--- Composer row math: the host sizes multiline inputs by the height layout
--- assigns, so we estimate wrapped rows from the text (panel is 600 px wide;
--- the input sits between the paperclip and send buttons at ~14 px font)
--- and let a ui.scroll viewport cap the visible area at 3 rows. The input
--- keeps its full estimated height inside, which is what arms the host
--- ScrollView's real scrollbar once the draft outgrows three rows.
--- Pixel-calibrated against the flake-pinned host (v5.4.1 cece614) in the
--- nested compositor: a 14 px font paints a 17 px line pitch (label rows
--- at +8 leading, ink bands 422/439/456/...), and kMultilinePadV =
--- Style::spaceSm = 8 pins the label 8 px under the frame, so the input's
--- real content height is rows * 17 + 16.
---
--- The estimate must track that exactly. Over-count leaves blank space
--- *below* the text, and stickToBottom pins the viewport into the blank.
--- Under-count is self-healing: the host Input pans its own text so the
--- caret stays visible (ensureCursorVisibleY), and it only yields the
--- wheel to the ancestor ScrollView when its internal offset is clamped.
--- Capacity measured with a 100-word single-line draft: 67..78 glyphs fit
--- a row between the buttons at panel width; 72 biases to under-count.
-local COMPOSE_LINE_H = 17
-local COMPOSE_PAD_V = 16 -- 2 * kMultilinePadV (Style::spaceSm = 8)
-local COMPOSE_MAX_ROWS = 3
-local COMPOSE_CHARS_PER_ROW = 72
-
-local function composeRows(text)
-  if text == "" then
-    return 1
-  end
-  local rows = 0
-  for line in string.gmatch(text .. "\n", "([^\r\n]*)\n") do
-    local count, used = 1, 0
-    for word in string.gmatch(line, "%S+") do
-      local w = #word
-      if used == 0 then
-        used = w
-      elseif used + 1 + w <= COMPOSE_CHARS_PER_ROW then
-        used = used + 1 + w
-      else
-        count = count + 1
-        used = w
-      end
-      while used > COMPOSE_CHARS_PER_ROW do -- overlong single word
-        count = count + 1
-        used = used - COMPOSE_CHARS_PER_ROW
-      end
-    end
-    rows = rows + count
-  end
-  return rows
-end
+-- Composer chrome + sizing lives in ./compose_geometry.luau so the luau CLI
+-- can exercise it as a pure regression test
+-- (tests/compose_geometry_test.luau). The panel is a ui.scroll box (fill +
+-- border + radius) around a frameless multiline Input: the Input's own frame
+-- paints radius scaled by its height (stadium arc on a multi-row box) and
+-- its label has no inset of the border, which is how the draft used to bleed
+-- under the stroke. The ScrollView owns the box instead; its content inset
+-- is only the border (paddingV 0 + BORDER_W), so the border hugs the text
+-- rows at every draft height. Host require dialect: ./ prefix + .luau ext.
+local G = require("./compose_geometry.luau")
 
 -- Caret-follow: the host Input puts its caret at the end of any value it is
 -- seeded with and pans only its *internal* offset (inert here, because the
@@ -1011,20 +971,17 @@ function render()
       and noctalia.tr("panel.compose-placeholder", { name = peerName() })
       or noctalia.tr("panel.compose-waiting")
 
-  -- Composer: multiline input that grows with the text up to three rows.
-  -- Beyond that the input keeps its full estimated height inside a
-  -- ui.scroll viewport: the host ScrollView shows its real scrollbar and
-  -- pans wheel/drag there (the input's own pan is inert because all its
-  -- lines fit its height). The cap only lands when the ROW itself has an
-  -- explicit height and align="stretch": Flex clamps its own height before
-  -- arranging stretch children, and a scroll view sizes from the exact
-  -- height it is arranged with (its min/max height props are otherwise
-  -- ignored by ScrollView::doLayout). Buttons ride in centering columns so
-  -- the stretch does not inflate them.
-  local rows = composeRows(composeText)
-  local wrapped = rows > COMPOSE_MAX_ROWS
-  local contentH = rows * COMPOSE_LINE_H + COMPOSE_PAD_V
-  local viewH = COMPOSE_MAX_ROWS * COMPOSE_LINE_H + COMPOSE_PAD_V
+  -- Composer: a bordered ui.scroll box that grows with the draft one line
+  -- per wrapped row up to MAX_ROWS, then caps and scrolls. The box exists
+  -- from the first row (the Input itself stays frameless: its frame paints
+  -- radius scaled by its height, a stadium arc on tall boxes, and its label
+  -- ignores the border), so the stroke always encloses the text. The row
+  -- carries the explicit height + align="stretch": Flex clamps its own
+  -- height before arranging stretch children, and a scroll view sizes from
+  -- the exact height it is arranged with (its min/maxHeight props are
+  -- otherwise ignored by ScrollView::doLayout). Buttons ride in centering
+  -- columns so the stretch does not inflate them.
+  local rows = G.countRows(composeText)
   local composer = ui.input({
     key = "compose-" .. composeKey,
     -- Uncontrolled host input: `value` seeds only when the node is created,
@@ -1034,31 +991,29 @@ function render()
     multiline = true,
     submitOnEnter = true,
     flexGrow = 1,
-    height = contentH,
+    -- Full estimated height inside the viewport: past the cap this is what
+    -- arms the ScrollView's real scrollbar; below it the box hugs it.
+    height = G.contentHeight(rows),
     focus = true,
-    -- Wrapped mode: the Input paints its own frame with
-    -- radius = frameRadius * height / Style::controlHeight, so a 3x-tall
-    -- draft turns that frame into a stadium arc that swings outside the
-    -- text. Hide it and let the ScrollView own the box: its radius is a
-    -- plain prop and its border insets the content.
-    frameVisible = not wrapped,
+    frameVisible = false,
     onChange = "onComposeChange",
     onSubmit = "onComposeSubmit",
   })
-  if wrapped then
-    composer = ui.scroll({
-      key = "compose-scroll-" .. composeKey,
-      flexGrow = 1,
-      align = "stretch", -- scroll content is a vertical flex: stretch gives the input the viewport width
-      fill = "surface_variant/0.6",
-      border = "outline/0.6",
-      radius = 10,
-      borderWidth = 1,
-      paddingH = 10,
-      paddingV = 8,
-      scrollToBottomRev = composeScrollRev,
-    }, { composer })
-  end
+  composer = ui.scroll({
+    key = "compose-scroll-" .. composeKey,
+    flexGrow = 1,
+    align = "stretch", -- scroll content is a vertical flex: stretch gives the input the viewport width
+    fill = "surface_variant/0.6",
+    border = "outline/0.6",
+    radius = 10,
+    borderWidth = G.BORDER_W,
+    paddingH = 10,
+    -- No vertical padding: the Input already pads its label by 8 px top and
+    -- bottom (kMultilinePadV); anything here would push the content past
+    -- boxHeight and fake a scrollbar at short drafts.
+    paddingV = 0,
+    scrollToBottomRev = composeScrollRev,
+  }, { composer })
 
   local paperclip = ui.button({
     glyph = "paperclip",
@@ -1069,12 +1024,10 @@ function render()
     onClick = "onAttachClicked",
   })
   local sendButton = ui.button({ glyph = "send", variant = "primary", enabled = composeText ~= "", onClick = "onSendClicked" })
-  if wrapped then
-    paperclip = ui.column({ justify = "center", align = "center" }, { paperclip })
-    sendButton = ui.column({ justify = "center", align = "center" }, { sendButton })
-  end
+  paperclip = ui.column({ justify = "center", align = "center" }, { paperclip })
+  sendButton = ui.column({ justify = "center", align = "center" }, { sendButton })
 
-  table.insert(body, ui.row({ gap = 8, align = wrapped and "stretch" or "end", height = wrapped and viewH or nil }, {
+  table.insert(body, ui.row({ gap = 8, align = "stretch", height = G.boxHeight(rows) }, {
     paperclip,
     composer,
     sendButton,

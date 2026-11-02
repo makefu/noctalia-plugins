@@ -25,12 +25,15 @@ __omp_shell("[chat panel](https://github.com/Mic92/noctalia-plugins/releases/dow
 
 ```
 nostr-chat/
-├── plugin.toml        ← manifest: panel, service, settings
-├── service.luau       ← daemon bridge (runStream/runAsync) + notifications
-├── panel.luau         ← chat UI (declarative ui.* tree)
-├── translations/      ← i18n bundles (<lang>.json)
-├── daemon/            ← Go bridge (Nostr + sqlite) + listen/cmd subcommands
-└── module.nix         ← NixOS module: builds daemon + systemd user unit
+├── plugin.toml           ← manifest: panel, service, settings
+├── service.luau          ← daemon bridge (runStream/runAsync) + notifications
+├── panel.luau            ← chat UI (declarative ui.* tree)
+├── compose_geometry.luau ← composer box math (wrap rows, growth cap) — shared
+│                            by the panel and its tests
+├── translations/         ← i18n bundles (<lang>.json)
+├── daemon/               ← Go bridge (Nostr + sqlite) + listen/cmd subcommands
+├── tests/                ← luau unit tests + nested-weston pixel E2E
+└── module.nix            ← NixOS module: builds daemon + systemd user unit
 ```
 
 ## Install
@@ -169,6 +172,9 @@ noctalia msg plugin makefu/nostr-chat:service all toggle
 echo '{"cmd":"send","text":"hi"}' | nc -U "$XDG_RUNTIME_DIR/nostr-chatd.sock"
 sqlite3 ~/.local/state/nostr-chatd/messages.db \
   'select dir,ack,substr(content,1,40) from messages order by ts desc limit 10'
+
+# checks: luau unit tests + nested-compositor pixel E2E (weston+labwc+grim)
+nix build .#checks.x86_64-linux.luau-geometry .#checks.x86_64-linux.composer-e2e
 ```
 
 ## How it works

@@ -20,9 +20,10 @@ placement = "floating"
 position = "center"
 # Esc closes the panel (host-owned dismiss).
 dismiss_on_outside_click = true
-# Ctrl+F focuses the search field even while the compose input has focus;
-# a focused text input consumes plain keys first, so chords still reach us.
-capture_keys = ["ctrl+f"]
+# Ctrl+F focuses the search field, Ctrl+V attaches a clipboard image (or
+# falls back to text); a focused text input consumes plain keys first, so
+# chords still reach us.
+capture_keys = ["ctrl+f", "ctrl+v"]
 
 [[setting]]
 key = "daemon_bin"

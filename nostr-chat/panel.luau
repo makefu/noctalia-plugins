@@ -33,6 +33,14 @@ local replyTarget = nil   -- {id, text} of the message being replied to
 local composeKey = 0
 local composeText = ""
 
+-- attach state (rendered by the tree below; declared early so the
+-- chat.attach watcher can reach these locals, not shadowing globals)
+local attachSeq = 0
+local attachBusy = false
+local attachError = ""
+local pickerError = "" -- surfaced by the service-side portal picker
+local chooser = nil -- {a=selectionPath, b=primaryPath} while the user picks
+
 -- Seed before watching: the service pushed its initial state long before
 -- this runtime exists (panels are created on first open); watch alone would
 -- leave the panel blind until the next daemon event.
@@ -54,6 +62,23 @@ noctalia.state.watch("chat.meta", function(v)
 end)
 noctalia.state.watch("chat.lastError", function(v)
   lastError = v or ""
+  render()
+end)
+
+-- Portal picker phase (service.luau owns the dialog; busy covers the
+-- clipboard capture that precedes a pick).
+noctalia.state.watch("chat.attach", function(v)
+  if type(v) ~= "table" then
+    return
+  end
+  if v.state == "busy" then
+    attachBusy = true
+    attachError = ""
+    pickerError = ""
+  else
+    attachBusy = false
+    pickerError = (v.state == "error" and v.message) or ""
+  end
   render()
 end)
 
@@ -208,18 +233,197 @@ function onBubbleAction(action, id)
   end
 end
 
----- attach (recent / clipboard / browse / external drop) -------------------
+---- attach (recent / clipboard / browse / portal picker / external drop) ---
+--
+-- wl-paste writes to stdout — there is no positional output file (that is
+-- wl-copy's syntax), so every capture redirects through `sh -c`.
 
 -- Globals on purpose: the fixed-name onClick callbacks below are _G
 -- functions and must resolve the same storage as render().
-attachSeq = 0
 attachOpen = false
 recentFiles = {}
 browsing = false
 
+local IMAGE_MIMES = { "image/png", "image/jpeg", "image/svg+xml" }
+local MIME_EXT = { ["image/png"] = ".png", ["image/jpeg"] = ".jpg", ["image/svg+xml"] = ".svg" }
+
+local function attachFail(msg)
+  attachBusy = false
+  attachError = msg
+  render()
+end
+
+local function attachPath(ext, tag)
+  local dir = noctalia.pluginDataDir()
+  if not dir or dir == "" then
+    attachFail(noctalia.tr("panel.attach-error-nodata"))
+    return nil
+  end
+  attachSeq = attachSeq + 1
+  return string.format("%s/attach-%d-%d-%s%s", dir, os.time(), attachSeq, tag, ext)
+end
+
+local function sendAttached(path, unlink)
+  chooser = nil
+  attachBusy = false
+  attachError = ""
+  render()
+  postCmd({ kind = "send-file", path = path, unlink = unlink })
+end
+
+local function discardChooser()
+  if chooser then
+    if chooser.a then noctalia.removeFile(chooser.a) end
+    if chooser.b then noctalia.removeFile(chooser.b) end
+    chooser = nil
+  end
+end
+
+-- One shell lists both clipboards; a dead owner would hang wl-paste, so the
+-- 4 s timeout doubles as the "no image" detector.
+local PROBE_SH = "wl-paste -l 2>/dev/null; echo '#SEP#'; wl-paste -p -l 2>/dev/null"
+
+local function mimeIn(buf)
+  if not buf then return nil, nil end
+  local unsupported
+  for line in string.gmatch(buf, "[^\r\n]+") do
+    local lower = string.lower(line)
+    for _, m in ipairs(IMAGE_MIMES) do
+      if lower == m then
+        return m, unsupported
+      end
+    end
+    if not unsupported and string.find(lower, "^image/") then
+      unsupported = line
+    end
+  end
+  return nil, unsupported
+end
+
+local function probeClipboards(cb)
+  if not noctalia.commandExists("wl-paste") then
+    cb(nil, nil, nil)
+    return
+  end
+  noctalia.runAsync({ "sh", "-c", PROBE_SH }, function(result)
+    local out = result and result.stdout or ""
+    local selBuf, primBuf = string.match(out, "^(.-)#SEP#\n?(.*)$")
+    local selMime, selBad = mimeIn(selBuf)
+    local primMime, primBad = mimeIn(primBuf)
+    cb(selMime, primMime, selBad or primBad)
+  end, 4000)
+end
+
+-- cb(path) on success; onFail() when the bytes never arrived (a dead owner,
+-- empty buffer, or missing data dir).
+local function attachCapture(mime, primary, tag, cb, onFail)
+  local path = attachPath(MIME_EXT[mime], tag)
+  if not path then
+    onFail()
+    return
+  end
+  local script = 'wl-paste ${3:+-p} -t "$1" > "$2" 2>/dev/null && test -s "$2"'
+  noctalia.runAsync({ "sh", "-c", script, "nostr-chat", mime, path, primary and "-p" or "" }, function(result)
+    if result and result.exitCode == 0 then
+      cb(path)
+    else
+      noctalia.removeFile(path)
+      onFail()
+    end
+  end, 5000)
+end
+
+-- Both buffers offer images: send one when they are the same bytes, else
+-- show the chooser row. A side that fails to capture drops out — the good
+-- side still gets sent, only an all-fail set surfaces an error.
+local function attachBoth(selMime, primMime)
+  local st = { a = nil, b = nil, da = false, db = false, done = false }
+  local function settle()
+    if st.done or not (st.da and st.db) then
+      return
+    end
+    st.done = true
+    if st.a and st.b then
+      noctalia.runAsync({ "sh", "-c", 'cmp -s "$1" "$2"', "nostr-chat", st.a, st.b }, function(r)
+        if r and r.exitCode == 0 then
+          noctalia.removeFile(st.b)
+          sendAttached(st.a, true)
+        else
+          chooser = { a = st.a, b = st.b }
+          attachBusy = false
+          render()
+        end
+      end, 5000)
+    elseif st.a then
+      sendAttached(st.a, true)
+    elseif st.b then
+      sendAttached(st.b, true)
+    else
+      attachFail(noctalia.tr("panel.attach-error-paste"))
+    end
+  end
+  attachCapture(selMime, false, "sel",
+    function(p) st.a = p st.da = true settle() end,
+    function() st.da = true settle() end)
+  attachCapture(primMime, true, "prim",
+    function(p) st.b = p st.db = true settle() end,
+    function() st.db = true settle() end)
+end
+
+-- The portal picker itself runs in service.luau: the dialog outlives the
+-- panel (a dismiss destroys this runtime and its pending callbacks), and the
+-- service reports the outcome through the chat.attach state key.
+
+local function attachGuard()
+  if attachBusy or chooser then
+    return false
+  end
+  attachBusy = true
+  attachError = ""
+  render()
+  return true
+end
+
+local function sendOne(mime, primary)
+  attachCapture(mime, primary, primary and "prim" or "sel",
+    function(p) sendAttached(p, true) end,
+    function() attachFail(noctalia.tr("panel.attach-error-paste")) end)
+end
+
+local function runAttach(textFallback)
+  probeClipboards(function(selMime, primMime, unsupported)
+    if selMime and primMime then
+      if selMime == primMime then
+        sendOne(selMime, false)
+      else
+        attachBoth(selMime, primMime)
+      end
+    elseif selMime then
+      sendOne(selMime, false)
+    elseif primMime then
+      sendOne(primMime, true)
+    elseif unsupported then
+      attachFail(noctalia.tr("panel.attach-error-unsupported") .. ": " .. unsupported)
+    elseif textFallback then
+      local t = noctalia.clipboardText()
+      attachBusy = false
+      if t and t ~= "" then
+        composeText = composeText .. t
+        composeKey = composeKey + 1
+      end
+      render()
+    else
+      pickerError = ""
+      attachBusy = false -- the service owns the busy phase from here on
+      render()
+      postCmd({ kind = "pick" })
+    end
+  end)
+end
+
 local function isImageName(name)
   local lower = string.lower(name)
-  for _, ext in ipairs({ ".png", ".jpg", ".jpeg", ".gif", ".webp" }) do
+  for _, ext in ipairs({ ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg" }) do
     if string.sub(lower, -#ext) == ext then
       return true
     end
@@ -227,28 +431,8 @@ local function isImageName(name)
   return false
 end
 
-local function attachCapturePath()
-  attachSeq = attachSeq + 1
-  return string.format("%s/attach-%d-%d.png", noctalia.pluginDataDir(), os.time(), attachSeq)
-end
-
 local function sendFile(path, unlink)
   postCmd({ kind = "send-file", path = path, unlink = unlink })
-end
-
--- wl-paste has no positional output argument: `wl-paste -t image/png out.png`
--- writes nothing and exits 1. Redirect in a shell instead.
-local function attachFromClipboard()
-  local path = attachCapturePath()
-  noctalia.runAsync({ "sh", "-c", string.format("wl-paste -t image/png > '%s'", path) }, function(result)
-    local info = result and result.exitCode == 0 and noctalia.fileInfo(path) or nil
-    if info and not info.isDir and (info.size or 0) > 0 then
-      sendFile(path, true)
-      return
-    end
-    noctalia.removeFile(path)
-    noctalia.notifyError("Nostr Chat", noctalia.tr("panel.attach-no-clipboard-image"))
-  end)
 end
 
 local function listRecentImages(limit)
@@ -305,7 +489,43 @@ function onClosePanel()
 end
 
 function onAttachClipboard()
-  attachFromClipboard()
+  if attachGuard() then runAttach(false) end
+end
+
+function onAttachFromKey()
+  if attachGuard() then runAttach(true) end
+end
+
+function onChooseClipboard()
+  if not chooser then return end
+  local a = chooser.a
+  if chooser.b then noctalia.removeFile(chooser.b) end
+  chooser = nil
+  sendAttached(a, true)
+end
+
+function onChoosePrimary()
+  if not chooser then return end
+  local b = chooser.b
+  if chooser.a then noctalia.removeFile(chooser.a) end
+  chooser = nil
+  sendAttached(b, true)
+end
+
+function onDiscardAttach()
+  discardChooser()
+  attachBusy = false
+  render()
+end
+
+-- Drive the flows from `noctalia msg plugin makefu/nostr-chat:chat <event> all`
+-- (also usable as a keybind hook).
+function onIpc(event, _payload)
+  if event == "attach" then
+    onAttachClicked()
+  elseif event == "paste" then
+    onAttachFromKey()
+  end
 end
 
 -- Native picker: `noctalia dmenu` pipes candidate lines to the launcher panel
@@ -630,6 +850,34 @@ function render()
     render()
   end
 
+  -- attach state: chooser previews / inline error / busy hint, above the composer
+  if chooser then
+    table.insert(body, ui.label({ text = noctalia.tr("panel.attach-choose"), fontSize = 11, color = "muted" }))
+    table.insert(body, ui.row({ gap = 8, align = "start" }, {
+      ui.column({ gap = 4, align = "center" }, {
+        ui.image({ path = chooser.a, width = 250, height = 170, fit = "contain" }),
+        ui.button({ text = noctalia.tr("panel.attach-clipboard"), variant = "primary", onClick = "onChooseClipboard" }),
+      }),
+      ui.column({ gap = 4, align = "center" }, {
+        ui.image({ path = chooser.b, width = 250, height = 170, fit = "contain" }),
+        ui.button({ text = noctalia.tr("panel.attach-primary"), variant = "primary", onClick = "onChoosePrimary" }),
+      }),
+      ui.button({ text = noctalia.tr("panel.attach-discard"), variant = "ghost", onClick = "onDiscardAttach" }),
+    }))
+  end
+
+  if attachBusy then
+    table.insert(body, ui.label({ text = noctalia.tr("panel.attach-attaching"), fontSize = 11, color = "muted" }))
+  end
+
+  local attachMsg = attachError
+  if attachMsg == "" then
+    attachMsg = pickerError
+  end
+  if attachMsg ~= "" then
+    table.insert(body, ui.label({ text = attachMsg, color = "error", fontSize = 11, maxWidth = 560 }))
+  end
+
   local online = meta.connected == true and (meta.relaysUp or 0) > 0
   local placeholder = online
       and noctalia.tr("panel.compose-placeholder", { name = peerName() })
@@ -640,13 +888,16 @@ function render()
       glyph = "paperclip",
       variant = "ghost",
       glyphSize = 16,
+      enabled = not attachBusy,
       tooltip = noctalia.tr("panel.attach-image-tooltip"),
       onClick = "onAttachClicked",
     }),
     ui.input({
       key = "compose-" .. composeKey,
-      value = "",
-      placeholder = placeholder,
+      -- Uncontrolled host input: `value` seeds only when the node is created,
+      -- so every programmatic edit (send, Ctrl+V paste) bumps composeKey and
+      -- the fresh node re-seeds from composeText.
+      value = composeText,
       multiline = true,
       submitOnEnter = true,
       flexGrow = 1,
@@ -681,6 +932,8 @@ function onKey(spec, pressed)
     searchOpen = true
     searchKey = searchKey + 1
     render()
+  elseif (pressed == true or pressed == "true") and spec == "ctrl+v" then
+    onAttachFromKey()
   end
 end
 
@@ -702,6 +955,10 @@ function onOpen(_context)
   attachOpen = false
   recentFiles = {}
   composeKey = composeKey + 1 -- fresh compose input grabs focus on open
+  pickerError = ""
+  attachBusy = false
+  attachError = ""
+  discardChooser() -- abandoned temp captures must not linger
   postCmd({ kind = "mark-read" })
   render()
 end

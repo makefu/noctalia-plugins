@@ -81,6 +81,106 @@ local function sendRaw(jsonLine)
   noctalia.runAsync({ daemonBin, "cmd", jsonLine })
 end
 
+---- file picker ---------------------------------------------------------
+-- The portal dialog outlives the panel: closing the panel destroys its
+-- LuauHost and with it any pending runAsync callback, so the picker runs
+-- here in the persistent service runtime and reports through chat.attach:
+--   {state="busy"} | {state="idle"} | {state="error", message=...}
+
+local PICKER_EXTS = { ".png", ".jpg", ".jpeg", ".svg", ".gif", ".webp" }
+
+-- xdg-desktop-portal FileChooser over busctl: OpenFile answers with the
+-- request object path only, the uris arrive on the Response signal.
+local PICKER_SH = table.concat({
+  [[req=$(busctl --user call org.freedesktop.portal.Desktop /org/freedesktop/portal/desktop org.freedesktop.portal.FileChooser OpenFile ssa{sv} "" "$1" 0 2>/dev/null | sed -n 's|.*/request/\([^"]*\)".*|/org/freedesktop/portal/desktop/request/\1|p')]],
+  '[ -n "$req" ] || exit 2',
+  'timeout -s KILL 55s busctl --user --json=short wait "$req" org.freedesktop.portal.Request Response 2>/dev/null',
+}, "\n")
+
+-- A killed runtime can leave a stale phase behind; the picker starts idle.
+noctalia.state.set("chat.attach", { state = "idle" })
+local pickerBusy = false
+
+local function openFilePicker()
+  if pickerBusy then
+    return
+  end
+  if not noctalia.commandExists("busctl") then
+    noctalia.state.set("chat.attach", { state = "error", message = noctalia.tr("panel.attach-picker-failed") })
+    return
+  end
+  pickerBusy = true
+  noctalia.state.set("chat.attach", { state = "busy" })
+  local function done(message)
+    pickerBusy = false
+    noctalia.state.set("chat.attach", message and { state = "error", message = message } or { state = "idle" })
+  end
+  noctalia.runAsync({ "sh", "-c", PICKER_SH, "nostr-chat", noctalia.tr("panel.attach-image-title") }, function(result)
+    if not result then
+      done()
+      return
+    end
+    if result.exitCode == 2 then
+      done(noctalia.tr("panel.attach-picker-failed"))
+      return
+    end
+    if result.exitCode ~= 0 then
+      done() -- timeout kill / dialog dismissed
+      return
+    end
+    noctalia.log("nostr-chat picker: " .. (result.stdout or ""))
+    local ok, d = pcall(noctalia.json.decode, result.stdout or "")
+    if not ok or type(d) ~= "table" or type(d.data) ~= "table" then
+      done()
+      return
+    end
+    local code = d.data[1]
+    if type(code) == "table" then code = code.data end -- {type,data} variant wrapper
+    if tonumber(code) ~= 0 then
+      done() -- user cancelled the dialog
+      return
+    end
+    -- busctl flattens the signal signature into `data`: code first, the
+    -- out-params dict last (possibly with extra slots in between).
+    local dict
+    for i = #d.data, 2, -1 do
+      if type(d.data[i]) == "table" then
+        dict = d.data[i]
+        break
+      end
+    end
+    local uris = dict and dict.uris
+    if type(uris) == "table" and uris.data then uris = uris.data end -- ua{sv}/as wrappers
+    if type(uris) == "string" then uris = { uris } end
+    if type(uris) ~= "table" then
+      done()
+      return
+    end
+    local picked
+    for _, u in ipairs(uris) do
+      if type(u) == "table" and u.data then u = u.data end
+      if type(u) == "string" and string.lower(string.sub(u, 1, 7)) == "file://" then
+        picked = noctalia.string.urlDecode(string.sub(u, 8))
+        break
+      end
+    end
+    if not picked or picked == "" then
+      done()
+      return
+    end
+    local ext = string.lower(string.match(picked, "%.[^%.\\/]+$") or "")
+    for _, e in ipairs(PICKER_EXTS) do
+      if ext == e then
+        -- user's own file: never unlink
+        sendRaw(noctalia.json.encode({ cmd = "send-file", path = picked, unlink = false }))
+        done()
+        return
+      end
+    end
+    done(noctalia.tr("panel.attach-error-unsupported") .. ": " .. (ext ~= "" and ext or "no extension"))
+  end, 60000)
+end
+
 -- The panel posts command intents here; the daemon owns all socket I/O.
 local commandHandlers = {
   send = function(c)
@@ -99,6 +199,9 @@ local commandHandlers = {
   end,
   cancel = function(c)
     sendRaw(noctalia.json.encode({ cmd = "cancel", id = c.id }))
+  end,
+  pick = function()
+    openFilePicker()
   end,
   raw = function(c)
     sendRaw(c.json or "")

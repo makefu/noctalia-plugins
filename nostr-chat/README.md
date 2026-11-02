@@ -13,8 +13,10 @@ __omp_shell("[chat panel](https://github.com/Mic92/noctalia-plugins/releases/dow
 - **One keystroke away** — `Mod+H` from anywhere, or let it open itself when the
   bot replies; it always lands at the newest message
 - **Snappy** — messages appear as you type, read receipts trickle in after
-- **Images** — paste one from the clipboard with 📎, bot-generated charts render
-  inline
+- **Images** — 📎 opens an attach menu: clipboard capture (PNG/JPEG/SVG), a
+  file browse picker, or recent images from Downloads/Pictures; drag-and-drop
+  an image anywhere on the panel; `Ctrl+V` captures a clipboard image directly
+  and falls back to text; bot-generated charts render inline
 - **Nothing gets lost** — history survives restarts, sends retry if the network
   is down
 - **Search** — `Ctrl+F`, highlight + prev/next walking through matches
@@ -134,9 +136,20 @@ binds."Mod+G".action = spawn ["noctalia" "msg" "plugin" "makefu/nostr-chat:servi
 
 ## Images
 
-The v5 plugin API has no file picker: click 📎 and it grabs the **clipboard
-image** (via `wl-paste`) and uploads it. Ask the bot for a chart, it renders
-inline when ready.
+Click 📎 for the attach menu: **Clipboard** grabs the clipboard image (via
+`wl-paste`, PNG/JPEG/SVG, from the selection or the primary buffer — if both
+hold different images you get a small chooser row), **Browse** lists images
+from Downloads/Pictures through the `noctalia dmenu` launcher, and **Recent**
+offers the newest image files on disk. Dropping image files on the panel sends
+them directly. `Ctrl+V` with the panel open skips the menu and captures the
+clipboard, falling back to pasting clipboard **text** into the composer when
+no image is offered. The **Clipboard** button with no image in the clipboard
+opens the **xdg-desktop-portal file picker** (`busctl` on `FileChooser`; png,
+jpg, jpeg, svg, gif, webp). Anything non-image reports *Unsupported file type*
+inline and sends nothing; dropped non-image files report
+*Only image files can be attached*.
+
+Ask the bot for a chart, it renders inline when ready.
 
 Files are end-to-end encrypted — the storage server only ever sees ciphertext.
 Needs `NOSTR_CHAT_BLOSSOM` set (see Configuration).
@@ -167,8 +180,8 @@ one-shots for commands. The panel is a thin declarative view over
 `noctalia.state`. Either side can restart without losing anything — the listen
 client re-dials with backoff and self-issues a replay on every (re)connect.
 
-Known limitations vs. the old QML UI: no OS-level file drag&drop (v5
-drag&drop is intra-panel only) and no in-panel file picker (clipboard 📎
-covers image attach).
+Known limitations vs. the old QML UI: OS-level file drag&drop needs the host
+`wl_data_device` receiver patch (`onFilesDropped` is wired and ready), and
+the portal picker additionally requires `busctl` plus a FileChooser portal.
 
 Protocol details and design rationale live in the `daemon/*.go` comments.

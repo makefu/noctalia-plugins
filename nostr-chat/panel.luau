@@ -421,9 +421,14 @@ local function runAttach(textFallback)
   end)
 end
 
+-- One list drives every attach-side gate (recent list, browse finder,
+-- portal picker result); service.luau keeps its mirror for the service-side
+-- picker. Comparisons are always against a lowercased name.
+local ATTACH_EXTS = { ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg" }
+
 local function isImageName(name)
   local lower = string.lower(name)
-  for _, ext in ipairs({ ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg" }) do
+  for _, ext in ipairs(ATTACH_EXTS) do
     if string.sub(lower, -#ext) == ext then
       return true
     end
@@ -533,6 +538,8 @@ function onIpc(event, _payload)
     onAttachClicked()
   elseif event == "paste" then
     onAttachFromKey()
+  elseif event == "browse" then
+    onAttachBrowse()
   end
 end
 
@@ -550,9 +557,16 @@ function onAttachBrowse()
   for _, d in ipairs(dirs) do
     table.insert(findDirs, string.format("'%s'", d))
   end
+  local names = {}
+  for _, e in ipairs(ATTACH_EXTS) do
+    table.insert(names, string.format("-iname '*%s'", e))
+  end
+  -- newest first: with 400+ candidates an alphabetical head -300 would
+  -- drop the images you actually want to send
   local listCmd = string.format(
-    "find %s -maxdepth 2 \\( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.gif' -o -iname '*.webp' \\) 2>/dev/null | sort | head -n 300",
-    table.concat(findDirs, " ")
+    "find %s -maxdepth 2 \\( %s \\) -printf '%%T@\\t%%p\\n' 2>/dev/null | sort -rn | cut -f2- | awk '!seen[$0]++' | head -n 300",
+    table.concat(findDirs, " "),
+    table.concat(names, " -o ")
   )
   noctalia.runAsync(listCmd, function(list)
     local lines = list and list.exitCode == 0 and list.stdout or ""

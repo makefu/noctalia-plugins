@@ -580,8 +580,14 @@ function onAttachBrowse()
   end, 15000)
 end
 
--- Called by the host when files are dropped on the panel surface
--- (noctalia-shell wl_data_device patch). One newline-separated argument.
+-- Drop sender, parked behind a flag: the host offers a drag to a panel only
+-- when the onFilesDropped global exists (and the shell needs an unmerged
+-- wl_data_device receiver anyway), so defining it conditionally keeps even
+-- patched shells from accepting an offer we would silently swallow. Flip the
+-- flag together with the plugin_api bump to 35 once the receiver lands.
+local DROP_ENABLED = false
+
+if DROP_ENABLED then
 function onFilesDropped(joined)
   if type(joined) ~= "string" or joined == "" then
     return
@@ -601,6 +607,7 @@ function onFilesDropped(joined)
   if sent == 0 and rejected > 0 then
     noctalia.notifyError("Nostr Chat", noctalia.tr("panel.attach-drop-unsupported"))
   end
+end
 end
 
 ---- tree --------------------------------------------------------------------

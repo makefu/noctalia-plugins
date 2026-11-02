@@ -14,9 +14,9 @@ __omp_shell("[chat panel](https://github.com/Mic92/noctalia-plugins/releases/dow
   bot replies; it always lands at the newest message
 - **Snappy** — messages appear as you type, read receipts trickle in after
 - **Images** — 📎 opens an attach menu: clipboard capture (PNG/JPEG/SVG), a
-  file browse picker, or recent images from Downloads/Pictures; drag-and-drop
-  an image anywhere on the panel; `Ctrl+V` captures a clipboard image directly
-  and falls back to text; bot-generated charts render inline
+  file browse picker, or recent images from Downloads/Pictures; `Ctrl+V`
+  captures a clipboard image directly and falls back to text; bot-generated
+  charts render inline (drag-and-drop exists but is disabled — see Images)
 - **Nothing gets lost** — history survives restarts, sends retry if the network
   is down
 - **Search** — `Ctrl+F`, highlight + prev/next walking through matches
@@ -140,14 +140,15 @@ Click 📎 for the attach menu: **Clipboard** grabs the clipboard image (via
 `wl-paste`, PNG/JPEG/SVG, from the selection or the primary buffer — if both
 hold different images you get a small chooser row), **Browse** lists images
 from Downloads/Pictures through the `noctalia dmenu` launcher, and **Recent**
-offers the newest image files on disk. Dropping image files on the panel sends
-them directly. `Ctrl+V` with the panel open skips the menu and captures the
-clipboard, falling back to pasting clipboard **text** into the composer when
-no image is offered. The **Clipboard** button with no image in the clipboard
-opens the **xdg-desktop-portal file picker** (`busctl` on `FileChooser`; png,
-jpg, jpeg, svg, gif, webp). Anything non-image reports *Unsupported file type*
-inline and sends nothing; dropped non-image files report
-*Only image files can be attached*.
+offers the newest image files on disk. `Ctrl+V` with the panel open skips the
+menu and captures the clipboard, falling back to pasting clipboard **text**
+into the composer when no image is offered. The **Clipboard** button with no
+image in the clipboard opens the **xdg-desktop-portal file picker** (`busctl`
+on `FileChooser`; png, jpg, jpeg, svg, gif, webp). Anything non-image reports
+*Unsupported file type* inline and sends nothing. **Drag-and-drop is disabled
+for now:** the sender is implemented but the host only offers drops to a
+plugin that defines the `onFilesDropped` global, and the shell-side
+`wl_data_device` receiver is still an unmerged local patch.
 
 Ask the bot for a chart, it renders inline when ready.
 
@@ -180,8 +181,9 @@ one-shots for commands. The panel is a thin declarative view over
 `noctalia.state`. Either side can restart without losing anything — the listen
 client re-dials with backoff and self-issues a replay on every (re)connect.
 
-Known limitations vs. the old QML UI: OS-level file drag&drop needs the host
-`wl_data_device` receiver patch (`onFilesDropped` is wired and ready), and
-the portal picker additionally requires `busctl` plus a FileChooser portal.
+Known limitations vs. the old QML UI: OS-level file drag&drop is disabled
+(`DROP_ENABLED = false` in `panel.luau`; needs the host `wl_data_device`
+receiver patch plus plugin API 35), and the portal picker additionally
+requires `busctl` plus a FileChooser portal.
 
 Protocol details and design rationale live in the `daemon/*.go` comments.

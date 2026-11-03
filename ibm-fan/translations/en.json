@@ -1,0 +1,38 @@
+{
+  "title": "IBM Fan",
+  "widget": {
+    "no-access": "no access",
+    "unavailable": "Fan interface unavailable"
+  },
+  "error": {
+    "permission-denied": {
+      "title": "No write access to /proc/acpi/ibm/fan.",
+      "hint": "Add your user to the fan_ctl group: run ibm-fan/scripts/setup-fan-permissions.sh with sudo, then log out and back in. NixOS: see the README requirements."
+    },
+    "invalid-level": "Unsupported fan level.",
+    "script-failed": "Fan helper failed.",
+    "read-failed": "Could not read /proc/acpi/ibm/fan."
+  },
+  "panel": {
+    "level": "Level",
+    "rpm": "RPM",
+    "temp": "Temp",
+    "auto": "Auto",
+    "full": "Full",
+    "level-0-7": "Level 0-7"
+  },
+  "settings": {
+    "poll-interval": {
+      "label": "Poll interval (seconds)",
+      "description": "How often the fan and temperature are re-read."
+    },
+    "thermal-zone": {
+      "label": "Thermal zone",
+      "description": "sysfs thermal zone used for the temperature readout."
+    },
+    "show-rpm": {
+      "label": "Show RPM",
+      "description": "Show fan speed instead of level in the bar."
+    }
+  }
+}

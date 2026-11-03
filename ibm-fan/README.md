@@ -1,8 +1,8 @@
 # ibm-fan
 
 ThinkPad fan control for [noctalia](https://github.com/noctalia-dev/noctalia) v5:
-fan RPM + level in the bar, click to cycle levels, slide-out panel with a
-level grid (Auto / Full / 0–7), RPM and temperature readout.
+fan RPM + level in the bar, click opens a slide-out panel with Auto/Full
+buttons and a 0–7 level slider, plus RPM and temperature readout.
 
 All `/proc/acpi/ibm/fan` access goes through the bundled
 `scripts/thinkpad-fan.sh` helper — the plugin never writes procfs itself, and
@@ -97,8 +97,10 @@ home-manager.users.makefu = {
 
 ## Usage
 
-- **Left-click** the bar widget: cycle `auto → 0 → … → 7 → disengaged → auto`.
-- **Right-click**: open the control panel (slides out under the widget).
+- **Left-click** the bar widget: open the control panel (slides out under the
+  widget). The slider commits on release; Auto/Full act immediately.
+- **Right-click**: cycle `auto → 0 → … → 7 → disengaged → auto` (the more
+  destructive action wants the deliberate button).
 - Keybinds / scripts via IPC:
 
 ```sh

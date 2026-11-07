@@ -49,6 +49,12 @@ check("two capacity words", G.countRows(("x"):rep(G.CHARS_PER_ROW) .. " " .. ("y
 check("overlong word ceil", G.countRows(("z"):rep(145)), 3)
 check("mixed wrap", G.countRows("short line\n" .. ("w"):rep(200) .. "\ntail"), 1 + 3 + 1)
 
+-- charsPerRow override (bubble estimate uses a narrower capacity).
+check("override wraps at 20", G.countRows(("x"):rep(21), 20), 2)
+check("override exact fits", G.countRows(("x"):rep(20), 20), 1)
+check("override beats default", G.countRows(("x"):rep(G.CHARS_PER_ROW), 20), 4)
+check("override nil keeps default", G.countRows(("x"):rep(G.CHARS_PER_ROW), nil), 1)
+
 -- contentHeight / wrapped --------------------------------------------------
 check("content height empty", G.contentHeight(1), G.LINE_H + G.PAD_V)
 check("content height rows", G.contentHeight(4), 4 * G.LINE_H + G.PAD_V)

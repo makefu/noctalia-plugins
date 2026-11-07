@@ -14,7 +14,8 @@
   },
   "bubble": {
     "reply-tooltip": "返信",
-    "quote-missing": "↳（以前のメッセージ）"
+    "quote-missing": "↳（以前のメッセージ）",
+    "copy-tooltip": "テキストをコピー"
   },
   "settings": {
     "nixos-hint": "ピア設定（公開鍵、リレー、表示名）は NixOS モジュールで管理されています — 設定の services.nostr-chat を参照してください。",

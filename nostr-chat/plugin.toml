@@ -17,6 +17,7 @@ id = "chat"
 entry = "panel.luau"
 width = 600
 placement = "floating"
+keyboard_focus = "exclusive"
 position = "center"
 # Esc closes the panel (host-owned dismiss).
 dismiss_on_outside_click = true

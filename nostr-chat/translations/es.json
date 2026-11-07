@@ -14,7 +14,8 @@
   },
   "bubble": {
     "reply-tooltip": "Responder",
-    "quote-missing": "↳ (mensaje anterior)"
+    "quote-missing": "↳ (mensaje anterior)",
+    "copy-tooltip": "Copiar texto"
   },
   "settings": {
     "nixos-hint": "La configuración del par (pubkey, relays, nombre visible) la gestiona el módulo de NixOS — consulta services.nostr-chat en tu configuración.",

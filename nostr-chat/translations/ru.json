@@ -14,7 +14,8 @@
   },
   "bubble": {
     "reply-tooltip": "Ответить",
-    "quote-missing": "↳ (более раннее сообщение)"
+    "quote-missing": "↳ (более раннее сообщение)",
+    "copy-tooltip": "Копировать текст"
   },
   "settings": {
     "nixos-hint": "Конфигурация собеседника (pubkey, релеи, отображаемое имя) управляется модулем NixOS — см. services.nostr-chat в вашей конфигурации.",

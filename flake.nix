@@ -87,6 +87,41 @@
                 bash $src/tests/composer-e2e.sh
                 touch $out
               '';
+          # Same nested chain; drives the bubble Inputs with a virtual
+          # pointer and asserts clipboard contents via wl-paste.
+          selection-e2e =
+            pkgs.runCommand "nostr-chat-selection-e2e"
+              {
+                nativeBuildInputs = [
+                  pkgs.noctalia
+                  pkgs.weston
+                  pkgs.labwc
+                  pkgs.grim
+                  pkgs.python3
+                  pkgs.dbus
+                  pkgs.wl-clipboard
+                  pkgs.wtype
+                  pkgs.mesa
+                ];
+                src = ./nostr-chat;
+              }
+              ''
+                export NOCTALIA=${pkgs.noctalia}/bin/noctalia
+                export WESTON=${pkgs.weston}/bin/weston
+                export LABWC=${pkgs.labwc}/bin/labwc
+                export GRIM=${pkgs.grim}/bin/grim
+                export WL_PASTE=${pkgs.wl-clipboard}/bin/wl-paste
+                export WTYPE=${pkgs.wtype}/bin/wtype
+                # noctalia's static Qt dlopens libEGL from /run/opengl-driver,
+                # which only exists on a system with an OpenGL driver. Point it
+                # at mesa and force the llvmpipe software rasteriser.
+                export LD_LIBRARY_PATH=${pkgs.mesa}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+                export __EGL_VENDOR_LIBRARY_FILENAMES=${pkgs.mesa}/share/glvnd/egl_vendor.d/50_mesa.json
+                export GALLIUM_DRIVER=llvmpipe
+                export LIBGL_ALWAYS_SOFTWARE=1
+                bash $src/tests/selection-e2e.sh
+                touch $out
+              '';
         }
       );
     };

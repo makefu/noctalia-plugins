@@ -131,6 +131,12 @@ end
 -- rows at every draft height. Host require dialect: ./ prefix + .luau ext.
 local G = require("./compose_geometry.luau")
 
+-- Bubble wrap estimate: the composer's 72 chars/row was measured for the
+-- draft width (panel minus side buttons); bubble text sits inside another
+-- 10 px bubble padding + input insets, and an under-count of rows clips the
+-- tail of a message, so bias low.
+local MSG_CHARS_PER_ROW = 60
+
 -- Caret-follow: the host Input puts its caret at the end of any value it is
 -- seeded with and pans only its *internal* offset (inert here, because the
 -- input keeps its full estimated height inside the capped ScrollView). The
@@ -284,20 +290,11 @@ function onBubbleAction(action, id)
   if action == "reply" then
     setReplyTarget(m)
   elseif action == "copy" then
-    noctalia.copyToClipboard(m.content or "")
+    noctalia.copyToClipboard(m.content or "", "text/plain")
   elseif action == "retry" then
     postCmd({ kind = "retry", id = id })
   elseif action == "cancel" then
     postCmd({ kind = "cancel", id = id })
-  end
-end
-
--- Drag/double/triple-click on a bubble's markdown lands here with the
--- selected text; the gesture suppresses the bubble reply click, so copying
--- is the only visible effect.
-function onMarkdownSelection(text)
-  if text and text ~= "" then
-    noctalia.copyToClipboard(text)
   end
 end
 
@@ -704,16 +701,31 @@ local function renderBubble(m)
   end
   local text = m.content or ""
   if text ~= "" then
-    -- No width prop here on purpose: markdown's width is applied as
-    -- min=max node clamp, which both forces 480-wide boxes and still
-    -- leaves the labels without a wrap budget. The wrap width arrives
-    -- through the layout instead: `inner` carries an explicit width, so
-    -- the stretch chain hands MarkdownView a real max-width constraint.
-    table.insert(content, ui.markdown({ text = text, selectable = true, onSelection = "onMarkdownSelection" }))
+    -- Multiline Input instead of ui.markdown: the host Input already has
+    -- pointer drag-select, double-click word select and Ctrl+C -> clipboard
+    -- (input.cpp onPointerPress/onPointerMotion/copyShortcut), so message
+    -- text is markable and copyable without any shell patch. It paints the
+    -- raw text (no markdown styling) and is technically editable, but the
+    -- buffer is uncontrolled and never read back - stray edits are cosmetic
+    -- and die with the node. Height over-counts wrapped rows on purpose:
+    -- blank space under the text is harmless, a clipped tail is not.
+    local rows = G.countRows(text, MSG_CHARS_PER_ROW) + 1
+    table.insert(content, ui.input({
+      -- Content length in the key: `value` seeds once per node, so an
+      -- edited message must land on a fresh Input or it shows stale text.
+      key = "txt-" .. m.id .. "-" .. #text,
+      value = text,
+      multiline = true,
+      frameVisible = false,
+      flexGrow = 1,
+      height = G.contentHeight(rows),
+    }))
   end
 
   -- ui.box is decoration-only in the v5 host (children are dropped), so the
   -- bubble itself is a styled column; the flex carries fill/radius/border.
+  -- align=stretch gives the Input a real width budget: a multiline Input
+  -- measures itself to kMinWidth unless the flex stretches it.
   local bubble = ui.column({
     key = "bub-" .. m.id,
     gap = 6,
@@ -722,10 +734,7 @@ local function renderBubble(m)
     padding = 10,
     border = (hit or mine) and "primary" or nil,
     borderWidth = hit and 2 or (mine and 1 or 0),
-    align = "start",
-    onClick = function()
-      setReplyTarget(m)
-    end,
+    align = "stretch",
   }, content)
 
   -- quote of the replied-to message, above the bubble
@@ -772,8 +781,33 @@ local function renderBubble(m)
       table.insert(metaKids, ui.glyph({ name = "check", size = 11, color = "primary/0.8" }))
     end
   end
-  -- openContextMenu only works from a button onRightClick (the sole callback
-  -- the host gives a pointer context), so each bubble carries a menu button.
+  -- Reply and copy are explicit buttons now: the bubble carries no onClick
+  -- so a press+drag lands on the Input and selects text instead of
+  -- replying. openContextMenu only works from a button onRightClick (the
+  -- sole callback the host gives a pointer context), so each bubble also
+  -- carries a menu button.
+  table.insert(metaKids, ui.button({
+    key = "reply-" .. m.id,
+    glyph = "corner-up-left",
+    variant = "ghost",
+    glyphSize = 12,
+    controlSize = "sm",
+    tooltip = noctalia.tr("bubble.reply-tooltip"),
+    onClick = function()
+      setReplyTarget(m)
+    end,
+  }))
+  table.insert(metaKids, ui.button({
+    key = "copy-" .. m.id,
+    glyph = "copy",
+    variant = "ghost",
+    glyphSize = 12,
+    controlSize = "sm",
+    tooltip = noctalia.tr("bubble.copy-tooltip"),
+    onClick = function()
+      noctalia.copyToClipboard(m.content or "", "text/plain")
+    end,
+  }))
   table.insert(metaKids, ui.button({
     key = "menu-" .. m.id,
     glyph = "dots-vertical",
@@ -786,8 +820,8 @@ local function renderBubble(m)
   -- flexGrow + stretch is the wrap-budget chain: the msg row gets an exact
   -- width from the scroll viewport, then a flexGrow child is re-measured
   -- with that exact main-axis share (flex.cpp flexGrow pass). Stretching
-  -- the bubble to it hands MarkdownView a real max-width constraint so its
-  -- labels wrap instead of measuring single-line and overflowing the panel.
+  -- the bubble to it hands the Input a real max-width constraint so it
+  -- soft-wraps instead of measuring single-line and overflowing the panel.
   -- (A `width` prop would only clamp min=max, never propagating a budget.)
   local inner = ui.column({
     key = "inner-" .. m.id,

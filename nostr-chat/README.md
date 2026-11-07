@@ -21,8 +21,9 @@ __omp_shell("[chat panel](https://github.com/Mic92/noctalia-plugins/releases/dow
   is down
 - **Search** — `Ctrl+F`, highlight + prev/next walking through matches
 - **Copy from the chat** — drag across a message (or double/triple-click a word/line)
-  to select its text; the selection goes to the clipboard, and a plain click
-  still replies as before
+  to select its text, then `Ctrl+C` (or the per-bubble copy button) puts it on the
+  clipboard; replying and the message menu moved to explicit bubble buttons so a
+  press+drag always reaches the text
 
 ## Layout (noctalia v5 plugin)
 
@@ -177,7 +178,8 @@ sqlite3 ~/.local/state/nostr-chatd/messages.db \
   'select dir,ack,substr(content,1,40) from messages order by ts desc limit 10'
 
 # checks: luau unit tests + nested-compositor pixel E2E (weston+labwc+grim)
-nix build .#checks.x86_64-linux.luau-geometry .#checks.x86_64-linux.composer-e2e
+nix build .#checks.x86_64-linux.luau-geometry .#checks.x86_64-linux.composer-e2e \
+          .#checks.x86_64-linux.selection-e2e
 ```
 
 ## How it works

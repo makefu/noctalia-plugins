@@ -14,7 +14,8 @@
   },
   "bubble": {
     "reply-tooltip": "Répondre",
-    "quote-missing": "↳ (message antérieur)"
+    "quote-missing": "↳ (message antérieur)",
+    "copy-tooltip": "Copier le texte"
   },
   "settings": {
     "nixos-hint": "La configuration du pair (pubkey, relais, nom d'affichage) est gérée par le module NixOS — voir services.nostr-chat dans votre configuration.",

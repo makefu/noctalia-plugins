@@ -14,7 +14,8 @@
   },
   "bubble": {
     "reply-tooltip": "Rispondi",
-    "quote-missing": "↳ (messaggio precedente)"
+    "quote-missing": "↳ (messaggio precedente)",
+    "copy-tooltip": "Copia testo"
   },
   "settings": {
     "nixos-hint": "La configurazione del peer (pubkey, relay, nome visualizzato) è gestita dal modulo NixOS — vedi services.nostr-chat nella tua configurazione.",

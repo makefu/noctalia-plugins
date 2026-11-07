@@ -32,10 +32,11 @@ M.BORDER_W = 1 -- the borderWidth the panel passes to the composer scroll box
 M.CHARS_PER_ROW = 72
 M.MAX_ROWS = 3
 
--- Wrapped-line count of the draft under greedy word wrapping at
--- CHARS_PER_ROW. Mirrors the host's newline handling: \r and \n both break.
--- "" is one row (the empty caret line).
-function M.countRows(text)
+-- Wrapped-line count under greedy word wrapping at charsPerRow (defaults to
+-- the composer calibration). Mirrors the host's newline handling: \r and \n
+-- both break. "" is one row (the empty caret line).
+function M.countRows(text, charsPerRow)
+  local capacity = charsPerRow or M.CHARS_PER_ROW
   if text == "" then
     return 1
   end
@@ -46,15 +47,15 @@ function M.countRows(text)
       local w = #word
       if used == 0 then
         used = w
-      elseif used + 1 + w <= M.CHARS_PER_ROW then
+      elseif used + 1 + w <= capacity then
         used = used + 1 + w
       else
         count = count + 1
         used = w
       end
-      while used > M.CHARS_PER_ROW do -- overlong single word
+      while used > capacity do -- overlong single word
         count = count + 1
-        used = used - M.CHARS_PER_ROW
+        used = used - capacity
       end
     end
     rows = rows + count

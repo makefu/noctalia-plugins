@@ -30,7 +30,8 @@
   },
   "bubble": {
     "reply-tooltip": "Antworten",
-    "quote-missing": "↳ (frühere Nachricht)"
+    "quote-missing": "↳ (frühere Nachricht)",
+    "copy-tooltip": "Text kopieren"
   },
   "settings": {
     "nixos-hint": "Die Peer-Konfiguration (Pubkey, Relays, Anzeigename) wird vom NixOS-Modul verwaltet — siehe services.nostr-chat in deiner Konfiguration.",

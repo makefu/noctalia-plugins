@@ -14,7 +14,8 @@
   },
   "bubble": {
     "reply-tooltip": "Beantwoorden",
-    "quote-missing": "↳ (eerder bericht)"
+    "quote-missing": "↳ (eerder bericht)",
+    "copy-tooltip": "Tekst kopiëren"
   },
   "settings": {
     "nixos-hint": "Peer-configuratie (pubkey, relays, weergavenaam) wordt beheerd door de NixOS-module — zie services.nostr-chat in je configuratie.",

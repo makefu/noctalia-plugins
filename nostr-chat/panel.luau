@@ -292,6 +292,15 @@ function onBubbleAction(action, id)
   end
 end
 
+-- Drag/double/triple-click on a bubble's markdown lands here with the
+-- selected text; the gesture suppresses the bubble reply click, so copying
+-- is the only visible effect.
+function onMarkdownSelection(text)
+  if text and text ~= "" then
+    noctalia.copyToClipboard(text)
+  end
+end
+
 ---- attach (recent / clipboard / browse / portal picker / external drop) ---
 --
 -- wl-paste writes to stdout — there is no positional output file (that is
@@ -700,7 +709,7 @@ local function renderBubble(m)
     -- leaves the labels without a wrap budget. The wrap width arrives
     -- through the layout instead: `inner` carries an explicit width, so
     -- the stretch chain hands MarkdownView a real max-width constraint.
-    table.insert(content, ui.markdown({ text = text }))
+    table.insert(content, ui.markdown({ text = text, selectable = true, onSelection = "onMarkdownSelection" }))
   end
 
   -- ui.box is decoration-only in the v5 host (children are dropped), so the

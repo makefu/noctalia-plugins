@@ -20,6 +20,9 @@ __omp_shell("[chat panel](https://github.com/Mic92/noctalia-plugins/releases/dow
 - **Nothing gets lost** — history survives restarts, sends retry if the network
   is down
 - **Search** — `Ctrl+F`, highlight + prev/next walking through matches
+- **Copy from the chat** — drag across a message (or double/triple-click a word/line)
+  to select its text; the selection goes to the clipboard, and a plain click
+  still replies as before
 
 ## Layout (noctalia v5 plugin)
 
